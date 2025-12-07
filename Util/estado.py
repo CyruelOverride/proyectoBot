@@ -1,5 +1,5 @@
 """
-Variables locales para estado de sesión y carrito.
+Variables locales para estado de sesión y citas.
 No se persisten en BD, son temporales por sesión.
 """
 
@@ -7,11 +7,8 @@ No se persisten en BD, son temporales por sesión.
 ESTADO = {}
 
 def get_estado(numero):
-    """Obtiene el estado de navegación del usuario (página, filtro, orden)."""
+    """Obtiene el estado de navegación del usuario."""
     return ESTADO.setdefault(numero, {
-        "page": 1,
-        "filter": "cat_all",
-        "order_asc": True,
         "state": "inicio",
         "waiting_for": None,  # Función esperada para próximo mensaje
         "context_data": {}  # Datos de contexto para la función esperada
@@ -21,9 +18,6 @@ def reset_estado(numero):
     """Resetea el estado de navegación del usuario."""
     if numero in ESTADO:
         ESTADO[numero] = {
-            "page": 1,
-            "filter": "cat_all",
-            "order_asc": True,
             "state": "inicio",
             "waiting_for": None,
             "context_data": {}
@@ -46,15 +40,21 @@ def clear_waiting_for(numero):
     estado["waiting_for"] = None
     estado["context_data"] = {}
 
-# CARRITO: variable local para el carrito temporal (no se persiste en BD)
-CARRITO = {}
+# CITAS: variable local para las citas agendadas (no se persiste en BD)
+CITAS = {}
 
-def get_cart(numero):
-    """Obtiene el carrito del usuario."""
-    return CARRITO.setdefault(numero, {})
+def get_citas(numero):
+    """Obtiene las citas del usuario."""
+    return CITAS.setdefault(numero, [])
 
-def clear_cart(numero):
-    """Limpia el carrito del usuario."""
-    if numero in CARRITO:
-        del CARRITO[numero]
+def add_cita(numero, cita):
+    """Agrega una cita a la lista del usuario."""
+    citas = get_citas(numero)
+    citas.append(cita)
+    return citas
+
+def clear_citas(numero):
+    """Limpia las citas del usuario."""
+    if numero in CITAS:
+        del CITAS[numero]
 

@@ -2,8 +2,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 import traceback
 from Models.chat import Chat
-from Services.PedidoService import PedidosService
-from Services.ProductoService import ProductosService
 from Services.ChatService import ChatService
 from Services.ClienteService import ClienteService
 from Util.database import get_db_session, init_db, engine
@@ -41,7 +39,7 @@ async def startup_event():
         else:
             print("✅ Base de datos ya inicializada")
         
-        print("🚀 Sistema de colas en memoria inicializado")
+        print("🚀 Sistema de agendamiento de citas inicializado")
         
     except Exception as e:
         print(f"⚠️ Error al verificar/inicializar base de datos: {e}")
@@ -137,13 +135,6 @@ async def receive(request: Request):
         
         try:
             chat_service = ChatService(db_session)
-            # Las colas se mantienen en memoria como variables de clase
-            pedido_service = PedidosService(db_session)
-            
-            # Revisar si hay que crear tandas pendientes por timeout
-            pedido_service.revisar_crear_tanda_memoria()
-            
-            producto_service = ProductosService()
             
             id_cliente = ClienteService.obtener_o_crear_cliente("", "", numero)
             
@@ -152,21 +143,15 @@ async def receive(request: Request):
             
             if tipo in ("text", "interactive"):
                 chat_service.registrar_mensaje(id_chat, mensaje, es_cliente=True)
-            elif tipo == "location":
-                chat_service.registrar_mensaje(id_chat, f"Ubicación: {mensaje}", es_cliente=True)
             
             chat = Chat(
                 id_chat=id_chat,
                 id_cliente=id_cliente,
-                pedido_service=pedido_service,
-                producto_service=producto_service,
-                chat_service=chat_service  # ✅ Reusar la misma sesión
+                chat_service=chat_service
             )
 
             if tipo in ("text", "interactive"):
                 chat.handle_text(numero, mensaje)
-            elif tipo == "location":
-                chat.handle_location(numero, mensaje)
             else:
                 chat.handle_text(numero, "Tipo de mensaje no soportado aún.")
 
