@@ -1,5 +1,6 @@
 from typing import Any, Optional, Dict, Callable
 from datetime import datetime
+import re
 from Services.ChatService import ChatService
 from Services.ClienteService import ClienteService
 from Services.RepartidorService import RepartidorService
@@ -157,6 +158,65 @@ class Chat:
         if waiting_for and waiting_for in self.function_map:
             return self.function_map[waiting_for](numero, texto_lower)
         
+        # Intentar extraer día y hora del mensaje si no hay waiting_for
+        dia_encontrado, hora_encontrada = self.extraer_dia_y_hora(texto_strip)
+        
+        if dia_encontrado or hora_encontrada:
+            # Si encontró día u hora, guardar en contexto y continuar flujo
+            context_data = estado.get("context_data", {})
+            if dia_encontrado:
+                context_data["dia"] = dia_encontrado
+            if hora_encontrada:
+                context_data["hora"] = hora_encontrada
+            estado["context_data"] = context_data
+            
+            # Verificar qué información ya tiene el usuario
+            tiene_nombre = context_data.get("nombre")
+            tiene_servicio = context_data.get("servicio")
+            
+            if not tiene_nombre:
+                # No tiene nombre, iniciar flujo normal pero con día/hora ya guardados
+                mensaje_bienvenida = (
+                    "👋 ¡Hola! Soy el asistente de la barbería 💈\n\n"
+                )
+                if dia_encontrado and hora_encontrada:
+                    mensaje_bienvenida += f"✅ Anoté {dia_encontrado.capitalize()} a las {hora_encontrada} 📅\n\n"
+                elif dia_encontrado:
+                    mensaje_bienvenida += f"✅ Anoté {dia_encontrado.capitalize()} 📅\n\n"
+                elif hora_encontrada:
+                    mensaje_bienvenida += f"✅ Anoté la hora {hora_encontrada} 🕐\n\n"
+                
+                mensaje_bienvenida += "¿Me decís tu nombre y apellido? "
+                
+                estado["state"] = "solicitando_nombre_completo"
+                self.set_waiting_for(numero, "flujo_nombre_completo")
+                
+                if self.id_chat:
+                    self.chat_service.registrar_mensaje(self.id_chat, mensaje_bienvenida, es_cliente=False)
+                
+                return enviar_mensaje_whatsapp(numero, mensaje_bienvenida)
+            elif not tiene_servicio:
+                # Tiene nombre pero no servicio
+                estado["state"] = "solicitando_servicio"
+                self.set_waiting_for(numero, "flujo_servicio")
+                mensaje = "¿Qué servicio querés reservar?\n\nEscribí:\n• *Corte de pelo*\n• *Barba*\n• *Corte + Barba*"
+                return enviar_mensaje_whatsapp(numero, mensaje)
+            elif dia_encontrado and hora_encontrada:
+                # Tiene todo, mostrar resumen directamente
+                return self.mostrar_resumen_directo(numero, context_data)
+            elif dia_encontrado:
+                # Tiene día pero falta hora
+                estado["state"] = "solicitando_hora"
+                self.set_waiting_for(numero, "flujo_hora")
+                mensaje = f"✅ {dia_encontrado.capitalize()} anotado 📅\n\n¿A qué hora te viene bien?\n\nEscribí la hora en formato HH:MM\nEjemplo: 14:30, 09:00, 18:45"
+                return enviar_mensaje_whatsapp(numero, mensaje)
+            elif hora_encontrada:
+                # Tiene hora pero falta día
+                estado["state"] = "solicitando_dia"
+                self.set_waiting_for(numero, "flujo_dia")
+                mensaje = f"✅ Hora {hora_encontrada} anotada 🕐\n\n¿Para qué día querés reservar?\n\nEscribí el día: lunes, martes, miércoles, jueves, viernes, sábado o domingo"
+                return enviar_mensaje_whatsapp(numero, mensaje)
+        
         # Si no hay waiting_for, iniciar flujo de agendamiento
         return self.flujo_inicio(numero, texto_lower)
 
@@ -164,6 +224,52 @@ class Chat:
         if self.id_chat:
             self.chat_service.registrar_mensaje(self.id_chat, mensaje, es_cliente=False)
         return enviar_mensaje_whatsapp(numero, mensaje)
+
+    def extraer_dia_y_hora(self, texto):
+        """Extrae día de la semana y hora del mensaje si están presentes."""
+        texto_lower = texto.lower()
+        dia_encontrado = None
+        hora_encontrada = None
+        
+        # Buscar días de la semana
+        dias_map = {
+            "lunes": "lunes",
+            "martes": "martes",
+            "miercoles": "miércoles",
+            "miércoles": "miércoles",
+            "jueves": "jueves",
+            "viernes": "viernes",
+            "sabado": "sábado",
+            "sábado": "sábado",
+            "domingo": "domingo"
+        }
+        
+        for dia_key, dia_valor in dias_map.items():
+            if dia_key in texto_lower:
+                dia_encontrado = dia_valor
+                break
+        
+        # Buscar hora en formato HH:MM o HH MM
+        # Patrón para hora: HH:MM, HH.MM, HH MM, o "a las HH:MM", "las HH"
+        patrones_hora = [
+            r'\b(\d{1,2}):(\d{2})\b',  # 14:30, 9:00
+            r'\b(\d{1,2})\.(\d{2})\b',  # 14.30
+            r'\b(\d{1,2})\s+(\d{2})\b',  # 14 30
+            r'a\s+las\s+(\d{1,2}):?(\d{2})?',  # a las 14:30, a las 14
+            r'las\s+(\d{1,2}):?(\d{2})?',  # las 14:30, las 14
+        ]
+        
+        for patron in patrones_hora:
+            match = re.search(patron, texto_lower)
+            if match:
+                horas = int(match.group(1))
+                minutos = int(match.group(2)) if match.group(2) else 0
+                
+                if 0 <= horas <= 23 and 0 <= minutos <= 59:
+                    hora_encontrada = f"{horas:02d}:{minutos:02d}"
+                    break
+        
+        return dia_encontrado, hora_encontrada
 
     def flujo_inicio(self, numero, mensaje):
         """Inicia el flujo de agendamiento de citas solicitando el nombre completo."""
@@ -180,6 +286,52 @@ class Chat:
             self.chat_service.registrar_mensaje(self.id_chat, mensaje_bienvenida, es_cliente=False)
         
         return enviar_mensaje_whatsapp(numero, mensaje_bienvenida)
+
+    def flujo_inicio_con_dia_hora(self, numero, mensaje, dia_encontrado, hora_encontrada):
+        """Inicia el flujo cuando ya se detectó día u hora en el mensaje."""
+        estado = get_estado(numero)
+        estado["state"] = "solicitando_nombre_completo"
+        self.set_waiting_for(numero, "flujo_nombre_completo")
+        
+        mensaje_bienvenida = (
+            "👋 ¡Hola! Soy el asistente de la barbería 💈\n\n"
+            "¿Me decís tu nombre y apellido? "
+        )
+        
+        if self.id_chat:
+            self.chat_service.registrar_mensaje(self.id_chat, mensaje_bienvenida, es_cliente=False)
+        
+        return enviar_mensaje_whatsapp(numero, mensaje_bienvenida)
+
+    def mostrar_resumen_directo(self, numero, context_data):
+        """Muestra el resumen directamente cuando ya se tiene toda la información."""
+        nombre = context_data.get("nombre", "")
+        apellido = context_data.get("apellido", "")
+        servicio = context_data.get("servicio", "")
+        dia = context_data.get("dia", "")
+        hora = context_data.get("hora", "")
+        
+        if not all([nombre, apellido, servicio, dia, hora]):
+            # Faltan datos, continuar flujo normal
+            return self.flujo_inicio(numero, "")
+        
+        estado = get_estado(numero)
+        estado["state"] = "confirmando_cita"
+        self.set_waiting_for(numero, "flujo_confirmacion_cita")
+        
+        mensaje_resumen = (
+            "📋 *Resumen de tu turno:*\n\n"
+            f"👤 *{nombre} {apellido}*\n"
+            f"💈 *{servicio}*\n"
+            f"📅 *{dia.capitalize()}*\n"
+            f"🕐 *{hora}*\n\n"
+            "¿Confirmás? (escribí *confirmar* o *si* para confirmar, *cancelar* para cancelar)"
+        )
+        
+        if self.id_chat:
+            self.chat_service.registrar_mensaje(self.id_chat, mensaje_resumen, es_cliente=False)
+        
+        return enviar_mensaje_whatsapp(numero, mensaje_resumen)
 
     def flujo_nombre_completo(self, numero, mensaje):
         """Captura el nombre completo y solicita el servicio."""
