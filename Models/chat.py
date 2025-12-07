@@ -30,8 +30,7 @@ class Chat:
         
         self.function_map = {
             "flujo_inicio": self.flujo_inicio,
-            "flujo_nombre": self.flujo_nombre,
-            "flujo_apellido": self.flujo_apellido,
+            "flujo_nombre_completo": self.flujo_nombre_completo,
             "flujo_servicio": self.flujo_servicio,
             "flujo_dia": self.flujo_dia,
             "flujo_hora": self.flujo_hora,
@@ -167,15 +166,14 @@ class Chat:
         return enviar_mensaje_whatsapp(numero, mensaje)
 
     def flujo_inicio(self, numero, mensaje):
-        """Inicia el flujo de agendamiento de citas solicitando el nombre."""
+        """Inicia el flujo de agendamiento de citas solicitando el nombre completo."""
         estado = get_estado(numero)
-        estado["state"] = "solicitando_nombre"
-        self.set_waiting_for(numero, "flujo_nombre")
+        estado["state"] = "solicitando_nombre_completo"
+        self.set_waiting_for(numero, "flujo_nombre_completo")
         
         mensaje_bienvenida = (
-            "👋 ¡Hola! Soy el asistente de la barbería 💈\n"
-            "Te ayudo a reservar tu turno en menos de 1 minuto.\n\n"
-            "¿Me decís tu nombre? 😊"
+            "👋 ¡Hola! Soy el asistente de la barbería 💈\n\n"
+            "¿Me decís tu nombre y apellido? "
         )
         
         if self.id_chat:
@@ -183,41 +181,30 @@ class Chat:
         
         return enviar_mensaje_whatsapp(numero, mensaje_bienvenida)
 
-    def flujo_nombre(self, numero, mensaje):
-        """Captura el nombre y solicita el apellido."""
-        nombre = mensaje.strip()
+    def flujo_nombre_completo(self, numero, mensaje):
+        """Captura el nombre completo y solicita el servicio."""
+        nombre_completo = mensaje.strip()
         
-        if not nombre or len(nombre) < 2:
+        if not nombre_completo or len(nombre_completo) < 3:
             return enviar_mensaje_whatsapp(numero, "😅 Me parece muy corto. ¿Podrías escribir tu nombre completo?")
         
-        estado = get_estado(numero)
-        estado["state"] = "solicitando_apellido"
-        estado["context_data"]["nombre"] = nombre
-        self.set_waiting_for(numero, "flujo_apellido")
+        # Separar nombre y apellido (tomar primera palabra como nombre, resto como apellido)
+        partes = nombre_completo.split()
+        if len(partes) < 2:
+            return enviar_mensaje_whatsapp(numero, "😅 Necesito tu nombre y apellido. ¿Me los podés escribir juntos?")
         
-        mensaje_respuesta = f"¡Perfecto, {nombre}! 👌\n\n¿Y tu apellido?"
-        
-        if self.id_chat:
-            self.chat_service.registrar_mensaje(self.id_chat, mensaje_respuesta, es_cliente=False)
-        
-        return enviar_mensaje_whatsapp(numero, mensaje_respuesta)
-
-    def flujo_apellido(self, numero, mensaje):
-        """Captura el apellido y solicita el servicio."""
-        apellido = mensaje.strip()
-        
-        if not apellido or len(apellido) < 2:
-            return enviar_mensaje_whatsapp(numero, "😅 Me parece muy corto. ¿Podrías escribir tu apellido completo?")
+        nombre = partes[0]
+        apellido = " ".join(partes[1:])
         
         estado = get_estado(numero)
         estado["state"] = "solicitando_servicio"
+        estado["context_data"]["nombre"] = nombre
         estado["context_data"]["apellido"] = apellido
         self.set_waiting_for(numero, "flujo_servicio")
         
-        nombre = estado.get("context_data", {}).get("nombre", "")
         mensaje_respuesta = (
-            f"¡Genial! 👍\n\n"
-            f"¿Qué servicio querés reservar, {nombre}?\n\n"
+            f"¡Perfecto, {nombre}! 👌\n\n"
+            f"¿Qué servicio querés reservar?\n\n"
             "Escribí:\n"
             "• *Corte de pelo*\n"
             "• *Barba*\n"
@@ -264,7 +251,7 @@ class Chat:
         
         mensaje_respuesta = (
             f"✅ Perfecto, {servicio} 💈\n\n"
-            "¿Qué día te viene bien?\n\n"
+            "¿Para que dia queres reservar?\n\n"
             "Escribí el día: lunes, martes, miércoles, jueves, viernes, sábado o domingo"
         )
         
