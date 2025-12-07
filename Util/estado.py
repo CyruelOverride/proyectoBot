@@ -32,7 +32,9 @@ def set_waiting_for(numero, func_name, context_data=None):
     """Establece la función esperada para próximo mensaje del usuario."""
     estado = get_estado(numero)
     estado["waiting_for"] = func_name
-    estado["context_data"] = context_data or {}
+    if context_data:
+        # Actualizar context_data existente en lugar de reemplazarlo
+        estado["context_data"].update(context_data)
 
 def clear_waiting_for(numero):
     """Limpia la función esperada."""
