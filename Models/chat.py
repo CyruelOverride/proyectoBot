@@ -175,7 +175,7 @@ class Chat:
             
             if not tiene_nombre:
                 # No tiene nombre, iniciar flujo normal pero con día/hora ya guardados
-                mensaje_bienvenida = "hola soy la demo asistente "
+                mensaje_bienvenida = "👋 hola soy la demo asistente "
                 if dia_encontrado and hora_encontrada:
                     mensaje_bienvenida += f"anoté {dia_encontrado.capitalize()} a las {hora_encontrada}. "
                 elif dia_encontrado:
@@ -275,7 +275,7 @@ class Chat:
         self.set_waiting_for(numero, "flujo_nombre_completo")
         
         mensaje_bienvenida = (
-            "hola soy la demo asistente decime tu nombre y apellido para iniciar la agenda"
+            "👋 hola soy la demo asistente decime tu nombre y apellido para iniciar la agenda"
         )
         
         if self.id_chat:
@@ -396,11 +396,48 @@ class Chat:
             )
         
         estado = get_estado(numero)
-        estado["state"] = "solicitando_dia_hora"
         # Asegurar que context_data existe y actualizar correctamente
         if "context_data" not in estado:
             estado["context_data"] = {}
         estado["context_data"]["servicio"] = servicio
+        
+        # Verificar si ya tiene día y hora guardados (del mensaje inicial)
+        context_data = estado.get("context_data", {})
+        dia = context_data.get("dia", "")
+        hora = context_data.get("hora", "")
+        
+        # Si ya tiene día y hora, mostrar resumen directamente
+        if dia and hora:
+            estado["state"] = "confirmando_cita"
+            self.set_waiting_for(numero, "flujo_confirmacion_cita")
+            
+            nombre = context_data.get("nombre", "")
+            apellido = context_data.get("apellido", "")
+            
+            # Normalizar día
+            if dia == "miercoles":
+                dia = "miércoles"
+            elif dia == "sabado":
+                dia = "sábado"
+            context_data["dia"] = dia
+            estado["context_data"] = context_data
+            
+            mensaje_resumen = (
+                "📋 *Resumen de tu turno:*\n\n"
+                f"👤 *{nombre} {apellido}*\n"
+                f"💈 *{servicio}*\n"
+                f"📅 *{dia.capitalize()}*\n"
+                f"🕐 *{hora}*\n\n"
+                "¿Confirmás? (escribí *confirmar* o *si* para confirmar, *cancelar* para cancelar)"
+            )
+            
+            if self.id_chat:
+                self.chat_service.registrar_mensaje(self.id_chat, mensaje_resumen, es_cliente=False)
+            
+            return enviar_mensaje_whatsapp(numero, mensaje_resumen)
+        
+        # Si no tiene día y hora, pedirlos
+        estado["state"] = "solicitando_dia_hora"
         self.set_waiting_for(numero, "flujo_dia_hora")
         
         mensaje_respuesta = (
